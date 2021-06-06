@@ -1,0 +1,78 @@
+#!/bin/bash
+
+echo "Enter PAT Token"
+read -r PAT
+
+echo "Enter Organization name"
+read -r OrganizationName
+
+echo "Enter Project ID"
+read -r projectId
+
+echo "Enter New Repository name To Create in Azure"
+read -r RepoName
+
+echo "Enter GIT URL To Import Code To Azure Repo"
+read -r GITURL
+
+echo "Enter Folder Name where Pipeline To be Created"
+read -r FolderName
+
+echo "Enter CI Pipeline Name"
+read -r CIPipeline
+
+#########################################Create Repo Stage############################################################
+
+	"Repo_Creation_Status=$(curl --write-out "%{http_code}\n" -X POST \
+  -u  :"$PAT"  "https://dev.azure.com/""${OrganizationName}""/""${projectId}""/_apis/git/repositories?api-version=6.1-preview.1" \
+  -H  "Accept: application/json" \
+  -H  "Content-Type: application/json" \
+  -d '{
+      	"name": "'"$RepoName"'",
+				"project":
+									{
+											"id": "'"$projectId"'"
+										}
+			}' --output Repooutput.txt --silent)"
+
+########################################Import Code from GIT Stage#######################################################
+
+ "Import_Status=$(curl --write-out "%{http_code}\n" -X POST \
+		-u  :"$PAT"  "https://dev.azure.com/""${OrganizationName}""/""${projectId}""/_apis/git/repositories/""${RepoName}""/importRequests?api-version=5.0-preview.1" \
+		-H  "Accept: application/json" \
+		-H  "Content-Type: application/json" \
+		-d '{
+					"parameters":
+												{
+														"gitSource":
+																				{
+																					"url": "'"$GITURL"'"
+																				}
+												}
+					}' --output Output.txt --silent)"
+					echo "Output: $(Import_Status)"
+
+
+#########################################Create Pipeline Stage#############################################################
+
+		RepoID=$(jq -r '.id' RepoOutput.txt)  #Get RepoID for
+		echo $RepoID
+
+	"Create_Pipeline=$(curl --write-out "%{http_code}\n" -X POST -L \
+		-u  :"$PAT" "https://dev.azure.com/""${OrganizationName}""/""${projectId}""/_apis/pipelines?api-version=6.0-preview.1" \
+		--header 'Content-Type: application/json' \
+		-H  "Accept: application/json" \
+		--data-raw '{
+									"folder": "'"$FolderName"'",
+									"name": "'"$CIPipeline"'",
+									"configuration": {
+																		"type": "yaml",
+																		"path": "azure-pipelines.yml",
+																		"repository": {
+																										"id": "'"$RepoID"'",
+																										"name": "'"$RepoName"'",
+																										"type": "azureReposGit"
+																									}
+																		}
+									}' --output output.txt --silent)"
+									echo "Output: $(Create_Pipeline)"
